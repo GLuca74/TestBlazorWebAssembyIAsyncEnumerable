@@ -1,0 +1,72 @@
+﻿@page "/counter"
+@using System.Text.Json;
+@using System.Text;
+
+<PageTitle>Counter</PageTitle>
+
+<h1>Counter</h1>
+<span>@Count</span>
+<table class="table">
+        <thead>
+            <tr>
+                <th>Title</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var n in Source) 
+            {
+                <tr>
+                    <td>@n</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+
+@code {
+    private int Count;
+    public List<int> Source;
+
+    protected async override Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Source = new List<int>();
+        await foreach (int n in GetData())
+        {
+            Count = Count + 1;
+            Source.Add(n);
+            if ((Count % 10) == 0)
+            {
+                await Task.Delay(1);
+                InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<int> GetData(CancellationToken cancellationToken = default)
+    {
+        using (HttpClient httpClient = new HttpClient())
+        {
+            httpClient.BaseAddress = new Uri(@"https://localhost:7034/");
+            httpClient.DefaultRequestHeaders.Accept.Clear();
+            httpClient.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            httpClient.Timeout = new TimeSpan(1, 0, 0);
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "weatherforecast");
+            request.SetBrowserResponseStreamingEnabled(true);
+            using (var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    HttpRequestException ex = new HttpRequestException(response.Content.ReadAsStringAsync().GetAwaiter().GetResult(), null, response.StatusCode);
+                    throw ex;
+                }
+                Stream responseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                IAsyncEnumerable<int> intResponse = JsonSerializer.DeserializeAsyncEnumerable<int>(responseStream, new JsonSerializerOptions{PropertyNameCaseInsensitive = true}, cancellationToken);
+                await foreach (int n in intResponse)
+                {
+                    yield return n;
+                }
+            }
+        }
+    }
+}
